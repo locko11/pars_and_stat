@@ -18,7 +18,7 @@ class ProductSpider(scrapy.Spider):
     def parse(self, response):
         parsed = response.xpath('//a[@class="sub__link arrow-icon"]/@href').getall()
         for url in parsed:
-            yield SplashRequest(url=url, callback=self.parse_inside)
+            yield response.xpath(url=url, callback=self.parse_inside)
 
 
     def get_groups(self, response):
@@ -39,7 +39,7 @@ class ProductSpider(scrapy.Spider):
                 yield response.follow(href, callback=self.parse_item)
             next_page = response.xpath('//a[@class="pagination__next__link"]/@href').get()
             if not (next_page is None):
-                yield response.follow(next_page, callback=self.parse_inside)
+                yield SplashRequest(next_page, callback=self.parse_inside)
 
 
 
