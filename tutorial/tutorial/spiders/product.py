@@ -3,7 +3,8 @@ from ..items import Product
 import datetime
 import json
 from scrapy.item import Item, Field
-from scrapy_splash import SplashRequest
+from inline_requests import inline_requests
+from ..settings import OFFERS_REQUEST_HEADER
 
 class ProductSpider(scrapy.Spider):
     name = 'product'
@@ -18,7 +19,7 @@ class ProductSpider(scrapy.Spider):
     def parse(self, response):
         parsed = response.xpath('//a[@class="sub__link arrow-icon"]/@href').getall()
         for url in parsed:
-            yield response.xpath(url=url, callback=self.parse_inside)
+            yield response.follow(url=url, callback=self.parse_inside)
 
 
     def get_groups(self, response):
@@ -39,16 +40,21 @@ class ProductSpider(scrapy.Spider):
                 yield response.follow(href, callback=self.parse_item)
             next_page = response.xpath('//a[@class="pagination__next__link"]/@href').get()
             if not (next_page is None):
-                yield SplashRequest(next_page, callback=self.parse_inside)
+                yield response.follow(next_page, callback=self.parse_inside)
 
-
-
+    @inline_requests
     def parse_item(self, response):
-
         item = Product()
         item['SKU'] = response.xpath('//span[@class ="p-tabs__sku-value"]/text()').get()
         if item['SKU'] in self.hendled_items:
             yield None
+
+        try:
+            url = f"https://allo.ua/ua/discounts/product/items/?sku={item['SKU']}&isAjax=1&currentLocale=uk_UA"
+            resp = yield scrapy.http.Request(url, headers=OFFERS_REQUEST_HEADER)
+            item['offers'] = sorted([i['text'] for i in json.loads(resp.text)])
+        except Exception:
+            self.logger.info(f"Failed request {url}", exc_info=True)
 
         item['time'] = datetime.datetime.now()
         item['title'] = response.xpath('//h1[@class ="p-view__header-title"]/text()').get()
@@ -58,12 +64,8 @@ class ProductSpider(scrapy.Spider):
         item['price'] = str(response.xpath('//div[contains(@class, "p-trade-price__current")]/span/text()')\
                                                                     .get()).encode("ascii","ignore").strip()
         item['price_regular'] = str(response.xpath('//div[@class ="p-trade-price__old"]/span[@class="sum"]/text()')\
-                                                                        .get()).encode("ascii","ignore").strip()
-        sel = response.xpath('//img[@class="shipping-brand__logo ls-is-cached lazyloaded"]').get()
-        off = response.xpath('//span[@class ="product-discount-list__item-text-title"]').getall()
-        print(sel)
-        print(off)
-        item['seller'] = sel
-        item['offers'] = off
+                                                                         .get()).encode("ascii","ignore").strip()
+        item['seller']= response.xpath('//span[@class="shipping-brand__name"]/text()').get() or 'ALLO'
+        # item['seller'] = response.xpath('//div[@class="shipping-seller__brand shipping-brand"]/img/@src').get()
         self.hendled_items.add(item['SKU'])
         yield item
